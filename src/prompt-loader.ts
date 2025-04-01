@@ -89,6 +89,7 @@ export class PromptLoader {
         metadata,
         content: promptContent.trim()
       };
+      log(`[Loader] Content loaded for ${path.basename(filePath)}: ${promptContent.trim().substring(0, 100)}...`, 'info'); // Log first 100 chars
 
       const promptName = path.basename(filePath, '.md');
       this.prompts.set(promptName, {
@@ -107,41 +108,6 @@ export class PromptLoader {
       throw new PromptsDirectoryError(
         `An unknown error occurred while loading prompt ${filePath}`
       );
-    }
-  }
-
-  /**
-   * Reloads a prompt from a file
-   * @param filePath The path to the prompt file
-   * @throws {PromptsDirectoryError} If the prompt cannot be reloaded
-   */
-  async reloadPrompt(filePath: string): Promise<void> {
-    const promptName = path.basename(filePath, '.md');
-    const oldConfig = this.prompts.get(promptName);
-    
-    try {
-      await this.loadPrompt(filePath);
-      log(`Reloaded prompt: ${promptName}`);
-    } catch (error) {
-      // Restore old config if reload fails
-      if (oldConfig) {
-        this.prompts.set(promptName, oldConfig);
-        log(`Restored previous version of prompt: ${promptName}`, 'warn');
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Removes a prompt from the registry
-   * @param name The name of the prompt to remove
-   */
-  removePrompt(name: string): void {
-    const removed = this.prompts.delete(name);
-    if (removed) {
-      log(`Removed prompt from loader: ${name}`);
-    } else {
-      log(`Prompt not found in loader: ${name}`, 'warn');
     }
   }
 

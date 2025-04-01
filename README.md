@@ -4,17 +4,16 @@ A Model Context Protocol (MCP) server implementation designed for managing, orga
 
 ## Description
 
-Prompt Serve allows you to create, manage, and serve structured prompts to AI models through MCP Prompts. It follows a "Prompts as Code" paradigm, where prompts are stored in text files and loaded into the application and have basic support for things like variables and imports.
+Prompt Serve allows you to create, manage, and serve structured prompts to AI models through MCP Prompts. It follows a "Prompts as Code" paradigm, where prompts are stored in text files and loaded into the application.
 
 Key benefits include:
 
-- **Centralized Prompt Management**: Store and organize your prompts in one location
-- **Standardized Format**: Use Markdown with frontmatter for human-readable, version-control friendly prompt definitions
-- **Dynamic Parameters**: Define schemas for prompt variables, enabling runtime customization
-- **Automatic Updates**: Edit prompts and see changes reflected without restarting your applications (updates occur via periodic scans)
-- **Integration Ready**: Works seamlessly with Claude Desktop and other MCP-compatible applications
+- **Prompt as Code**: Use Markdown with frontmatter for human-readable, version-control friendly prompt definitions.
+- **Centralized Prompt Management**: Store and organize your prompts in one location.
+- **Dynamic Parameters**: Use dynamic parameters in your prompts.
+- **Automatic Detection of New Prompts**: Automatically detects when new prompt files are added via periodic scanning. **Note:** Modifications to or deletions of existing prompt files currently require a server restart to take effect.
 
-## Technologies
+## Dependencies
 
 - TypeScript
 - MCP SDK (@modelcontextprotocol/sdk)
@@ -48,7 +47,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "args": ["/path/to/prompt-serve/dist/index.js"],
       "env": {
         "PROMPTS_DIR": "/path/to/your/prompts",
-        "PROMPT_SCAN_INTERVAL_MS": "5000"
+        "PROMPT_SCAN_INTERVAL_MS": "10000" // Example: 10 seconds
       }
     }
   }
@@ -74,7 +73,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 Prompt Serve uses environment variables for configuration:
 
 - **`PROMPTS_DIR`** (Required): The absolute path to the directory containing your `.md` prompt files.
-- **`PROMPT_SCAN_INTERVAL_MS`** (Optional): The interval, in milliseconds, at which the server scans the `PROMPTS_DIR` for changes. Defaults to `5000` (5 seconds) if not set or invalid. Lower values provide faster updates but increase system load.
+- **`PROMPT_SCAN_INTERVAL_MS`** (Optional): The interval, in milliseconds, at which the server scans the `PROMPTS_DIR` for new files. Defaults to `10000` (10 seconds) if not set or invalid.
 
 ## Development
 
@@ -91,12 +90,6 @@ prompt-serve/
 ├── package.json   # Project configuration
 └── tsconfig.json  # TypeScript configuration
 ```
-
-## Key Features
-
-- **Periodic Refresh of Prompts**: Automatically detects changes (additions, modifications, deletions) to prompt files in the specified directory via periodic scanning and updates the available prompts without server restart. This approach was chosen for robustness over potentially unreliable file system events.
-- **Markdown-based Prompt Files**: Uses Markdown files with frontmatter for easy editing and version control.
-- **Schema Validation**: Validates prompt parameters using Zod for type safety and better error messages.
 
 ## Prompt Files
 
@@ -163,9 +156,8 @@ Example schema:
 Common issues and solutions:
 
 1. **`PROMPTS_DIR` not set**: Make sure to set the `PROMPTS_DIR` environment variable in your client configuration to the correct path.
-2. **Changes not detected quickly**: Prompt changes are detected via periodic scanning. Check the `PROMPT_SCAN_INTERVAL_MS` setting (defaults to 5 seconds). If changes still aren't detected after the interval, check file permissions and ensure the server process is running correctly.
-3. **Schema validation errors**: Check that your prompt parameters match the schema definition in the frontmatter.
-4. **Duplicate prompts or naming issues**: Ensure the `name` field in your prompt frontmatter is unique or manage conflicts appropriately. If issues persist after a scan cycle, report a bug.
+2. **New prompts not detected quickly**: Detection occurs via periodic scanning. Check the `PROMPT_SCAN_INTERVAL_MS` setting (defaults to 10 seconds). If new files still aren't detected after the interval, check file permissions and ensure the server process is running correctly.
+3. **Modifications to existing prompts not reflected**: This is the current expected behavior and is a limitation of the current MCP SDK (see [PR #247](https://github.com/modelcontextprotocol/typescript-sdk/pull/247)). Changes to existing prompt files require a server restart to be loaded.
 
 ## Contributing
 

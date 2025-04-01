@@ -5,21 +5,28 @@ import { server } from './server.js';
 import { log } from './utils/logging.js';
 import { PromptConfig, PromptMetadata } from './types.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import './server-extension.js';
 
 /**
- * Manages prompt registration with the MCP server.
+ * Handles the registration of prompts with the MCP server.
+ * Relies on the documented `server.prompt()` method for adding prompts.
  */
 export class PromptRegistry {
   private server: McpServer;
+  // Store mapping between filename-derived names and clean names (from frontmatter)
   private nameMapping: Map<string, string> = new Map();
 
+  /**
+   * Creates a new PromptRegistry instance
+   * @param mcpServer The MCP server instance to register prompts with
+   */
   constructor(mcpServer: McpServer = server) {
     this.server = mcpServer;
   }
 
   /**
    * Registers all prompts from the prompt loader with the MCP server.
+   * Uses registerPrompt for consistency in registration logic.
+   * @param promptLoader The PromptLoader instance containing the prompts to register
    */
   async registerAllPrompts(promptLoader: PromptLoader): Promise<void> {
     const prompts = promptLoader.getAllPrompts();
@@ -29,39 +36,39 @@ export class PromptRegistry {
     for (const prompt of prompts) {
       const filenameDerivedName = path.basename(prompt.path, '.md');
       try {
-        await this.updatePrompt(filenameDerivedName, prompt);
+        await this.registerPrompt(filenameDerivedName, prompt);
         successCount++;
       } catch (error) {
         errorCount++;
+        // Error is already logged within registerPrompt if it's not handled
       }
     }
     log(`Finished registration attempt. Successful: ${successCount}, Failed: ${errorCount}. Total tracked prompts: ${this.nameMapping.size}`);
   }
 
   /**
-   * Updates or registers a prompt with the MCP server.
+   * Registers a new prompt with the MCP server using `server.prompt()`.
+   * Also used for initial loading.
+   * @param filenameDerivedName The filename-derived name of the prompt (e.g., 'my-prompt' for 'my-prompt.md')
+   * @param config The prompt configuration
+   * @throws Throws an error if registration via `server.prompt()` fails for reasons other than "already registered".
    */
-  async updatePrompt(filenameDerivedName: string, config: PromptConfig): Promise<void> {
+  async registerPrompt(filenameDerivedName: string, config: PromptConfig): Promise<void> {
     const { metadata, content } = config.parsed;
-    const newCleanName = metadata.name;
+    const newCleanName = metadata.name; // The name from frontmatter
 
-    log(`Updating/Registering prompt: Filename="${filenameDerivedName}", CleanName="${newCleanName}"`, 'info');
+    log(`Registering prompt: Filename="${filenameDerivedName}", CleanName="${newCleanName}"`, 'info');
 
+    let registrationAttempted = false;
     try {
-      const oldCleanName = this.nameMapping.get(filenameDerivedName);
-      const isCleanNameChanging = oldCleanName !== undefined && oldCleanName !== newCleanName;
-
-      if (isCleanNameChanging) {
-        log(`Clean name changing from "${oldCleanName}" to "${newCleanName}" for filename "${filenameDerivedName}"`, 'info');
-      }
-
       const conflictingPrompts = Array.from(this.nameMapping.entries())
         .filter(([key, value]) => value === newCleanName && key !== filenameDerivedName);
 
       if (conflictingPrompts.length > 0) {
-         log(`Warning: New clean name "${newCleanName}" is already used by other file(s): ${conflictingPrompts.map(e => e[0]).join(', ')}. Registration will overwrite the existing prompt definition.`, 'warn');
+         log(`Warning: New clean name "${newCleanName}" is already used by other file(s): ${conflictingPrompts.map(e => e[0]).join(', ')}. Registration will overwrite the existing prompt definition associated with "${newCleanName}".`, 'warn');
       }
 
+      registrationAttempted = true; 
       this.server.prompt(
         newCleanName,
         metadata.description,
@@ -81,29 +88,20 @@ export class PromptRegistry {
       this.nameMapping.set(filenameDerivedName, newCleanName);
       log(`Updated internal mapping: "${filenameDerivedName}" -> "${newCleanName}"`, 'info');
 
-      log(`Successfully updated/registered prompt: CleanName="${newCleanName}" (Filename="${filenameDerivedName}")`);
+      log(`Successfully registered prompt: CleanName="${newCleanName}" (Filename="${filenameDerivedName}")`);
 
     } catch (error) {
-      log(`Failed to update/register prompt via server.prompt() (Filename="${filenameDerivedName}", CleanName="${newCleanName}"): ${error instanceof Error ? error.message : String(error)}`, 'error');
-      throw error;
-    }
-  }
-
-  /**
-   * Removes a prompt from the internal registry mapping.
-   * Note: This does not guarantee removal from the running MCP server.
-   */
-  removePrompt(filenameDerivedName: string): void {
-    log(`Removing prompt from internal registry: Filename="${filenameDerivedName}"`, 'info');
-    const cleanName = this.nameMapping.get(filenameDerivedName);
-
-    const deleted = this.nameMapping.delete(filenameDerivedName);
-
-    if (deleted) {
-      log(`Removed internal mapping for "${filenameDerivedName}" (was mapped to "${cleanName}")`, 'info');
-      log(`Note: Prompt "${cleanName}" may still be active on the server until overwritten or restarted.`, 'warn');
-    } else {
-      log(`Internal mapping for "${filenameDerivedName}" not found. No action taken.`, 'warn');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (registrationAttempted && errorMessage.includes('is already registered')) {
+        log(`Prompt "${newCleanName}" registration failed with 'already registered'. Assuming registration successful.`, 'warn');
+        if (!this.nameMapping.has(filenameDerivedName) || this.nameMapping.get(filenameDerivedName) !== newCleanName) {
+            this.nameMapping.set(filenameDerivedName, newCleanName);
+            log(`Corrected internal mapping during 'already registered' handling: "${filenameDerivedName}" -> "${newCleanName}"`, 'info');
+        }
+      } else {
+        log(`Failed to register prompt via server.prompt() (Filename="${filenameDerivedName}", CleanName="${newCleanName}"): ${errorMessage}`, 'error');
+        throw error;
+      }
     }
   }
 }
