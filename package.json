@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "chokidar": "^4.0.3",
     "gray-matter": "^4.0.3",
     "typescript": "^4.9.3",
     "zod": "^3.22.4"

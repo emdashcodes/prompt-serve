@@ -11,7 +11,7 @@ Key benefits include:
 - **Centralized Prompt Management**: Store and organize your prompts in one location
 - **Standardized Format**: Use Markdown with frontmatter for human-readable, version-control friendly prompt definitions
 - **Dynamic Parameters**: Define schemas for prompt variables, enabling runtime customization
-- **Real-time Updates**: Edit prompts without restarting your applications
+- **Automatic Updates**: Edit prompts and see changes reflected without restarting your applications (updates occur via periodic scans)
 - **Integration Ready**: Works seamlessly with Claude Desktop and other MCP-compatible applications
 
 ## Technologies
@@ -24,15 +24,15 @@ Key benefits include:
 
 1. Install dependencies:
 
-```bash
-npm install
-```
+    ```bash
+    npm install
+    ```
 
 2. Build the project:
 
-```bash
-npm run build
-```
+    ```bash
+    npm run build
+    ```
 
 ### Client Configurations
 
@@ -45,44 +45,58 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "prompt-serve": {
       "command": "node",
-      "args": ["/Users/ember/Dev/prompt-serve/dist/index.js"],
+      "args": ["/path/to/prompt-serve/dist/index.js"],
       "env": {
-        "PROMPTS_DIR": "/path/to/your/prompts"
+        "PROMPTS_DIR": "/path/to/your/prompts",
+        "PROMPT_SCAN_INTERVAL_MS": "5000"
       }
     }
   }
 }
 ```
 
+*(Replace `/path/to/prompt-serve` and `/path/to/your/prompts` with your actual paths)*
+
 #### Cursor
+
+*(Configuration details needed)*
 
 #### RooCode
 
+*(Configuration details needed)*
+
 #### GitHub Copilot
 
-> **Important**: The `PROMPTS_DIR` environment variable must be set.
+*(Configuration details needed)*
+
+## Configuration
+
+Prompt Serve uses environment variables for configuration:
+
+- **`PROMPTS_DIR`** (Required): The absolute path to the directory containing your `.md` prompt files.
+- **`PROMPT_SCAN_INTERVAL_MS`** (Optional): The interval, in milliseconds, at which the server scans the `PROMPTS_DIR` for changes. Defaults to `5000` (5 seconds) if not set or invalid. Lower values provide faster updates but increase system load.
 
 ## Development
 
-- Use `npm run dev` to run in watch mode during development
-- Use `npm run clean` to clean the build directory
+- Use `npm run dev` to run in watch mode during development (compiles TypeScript on change).
+- Use `npm run clean` to clean the build directory.
 
 ## Project Structure
 
 ```
-mcp-prompt-server/
+prompt-serve/
 ├── src/           # Source code
 ├── dist/          # Compiled JavaScript (generated)
-├── docs/          # Documentation
+├── example-prompts/ # Example prompt files
 ├── package.json   # Project configuration
 └── tsconfig.json  # TypeScript configuration
 ```
 
 ## Key Features
 
-- **Hot-reloading of Prompts**: Automatically detects changes to prompt files and updates them in real-time without server restart
-- **Markdown-based Prompt Files**: Uses Markdown files with frontmatter for easy editing and version control
-- **Schema Validation**: Validates prompt parameters using Zod for type safety and better error messages
+- **Periodic Refresh of Prompts**: Automatically detects changes (additions, modifications, deletions) to prompt files in the specified directory via periodic scanning and updates the available prompts without server restart. This approach was chosen for robustness over potentially unreliable file system events.
+- **Markdown-based Prompt Files**: Uses Markdown files with frontmatter for easy editing and version control.
+- **Schema Validation**: Validates prompt parameters using Zod for type safety and better error messages.
 
 ## Prompt Files
 
@@ -109,9 +123,9 @@ Your prompt content here...
 
 ### Frontmatter Fields
 
-- `name`: The display name for the prompt (can include spaces and special characters)
-- `description`: A description of what the prompt does
-- `schema`: (Optional) A JSON schema defining the prompt's parameters
+- `name`: The display name for the prompt (can include spaces and special characters). This is the primary identifier shown in MCP clients.
+- `description`: A description of what the prompt does.
+- `schema`: (Optional) A JSON schema defining the prompt's parameters.
 
 The server uses the `name` field from frontmatter as the prompt identifier in the UI, allowing for more user-friendly prompt names with spaces and special characters.
 
@@ -119,10 +133,10 @@ The server uses the `name` field from frontmatter as the prompt identifier in th
 
 The schema field uses a simplified schema format to define prompt parameters, based on the [Model Context Protocol documentation](https://modelcontextprotocol.io/docs/concepts/prompts#prompt-structure).
 
-- **Properties**: Define parameters with their descriptions and requirements
-- **Required Fields**: Mark required parameters using `required: true` in the property definition
-- **Types**: All parameters are handled as strings
-- **Descriptions**: Each parameter can have a description that will appear in the UI of your AI client
+- **Properties**: Define parameters with their descriptions and requirements.
+- **Required Fields**: Mark required parameters using `required: true` in the property definition.
+- **Types**: All parameters are handled as strings.
+- **Descriptions**: Each parameter can have a description that will appear in the UI of your AI client.
 
 Example schema:
 
@@ -148,16 +162,17 @@ Example schema:
 
 Common issues and solutions:
 
-1. **PROMPTS_DIR not set**: Make sure to set the PROMPTS_DIR environment variable
-2. **Changes not detected**: Ensure file system events are working in your environment, report a bug if not
-3. **Schema validation errors**: Check that your prompt parameters match the schema definition
+1. **`PROMPTS_DIR` not set**: Make sure to set the `PROMPTS_DIR` environment variable in your client configuration to the correct path.
+2. **Changes not detected quickly**: Prompt changes are detected via periodic scanning. Check the `PROMPT_SCAN_INTERVAL_MS` setting (defaults to 5 seconds). If changes still aren't detected after the interval, check file permissions and ensure the server process is running correctly.
+3. **Schema validation errors**: Check that your prompt parameters match the schema definition in the frontmatter.
+4. **Duplicate prompts or naming issues**: Ensure the `name` field in your prompt frontmatter is unique or manage conflicts appropriately. If issues persist after a scan cycle, report a bug.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+1. Fork the repository.
+2. Create a feature branch.
+3. Make your changes.
+4. Submit a pull request.
 
 Please ensure your changes follow the existing code style and include appropriate documentation.
 

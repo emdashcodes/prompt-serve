@@ -1,22 +1,31 @@
-import { FSWatcher } from 'chokidar';
 import path from 'path';
-import chokidar from 'chokidar';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises'; // Use promises for async stat
 import { PromptLoader } from './prompt-loader.js';
 import { PromptRegistry } from './prompt-registry.js';
 import './server-extension.js';
 import { log } from './utils/logging.js';
 
+// Default scan interval in milliseconds
+const DEFAULT_SCAN_INTERVAL_MS = 5000;
+
+// Interface for storing file state
+interface FileState {
+  mtimeMs: number;
+}
+
 /**
- * Responsible for monitoring the prompts directory for changes
- * and triggering appropriate actions when prompts are added, modified, or deleted.
+ * Monitors the prompts directory for changes using periodic scanning.
  */
 export class PromptWatcher {
-  private watcher: FSWatcher;
   private loader: PromptLoader;
   private registry: PromptRegistry;
   private periodicScanInterval?: NodeJS.Timeout;
-  
+  private promptsDir: string;
+  private scanIntervalMs: number;
+  // Map to store the last known state (mtime) of processed files
+  private knownFilesState: Map<string, FileState> = new Map();
+
   /**
    * Creates a new PromptWatcher instance
    * @param promptsDir The directory to watch for prompt changes
@@ -26,10 +35,22 @@ export class PromptWatcher {
   constructor(promptsDir: string, loader: PromptLoader, registry: PromptRegistry) {
     this.loader = loader;
     this.registry = registry;
-    
-    log(`Setting up watcher for ${promptsDir}`);
-    
-    // Ensure the directory exists
+    this.promptsDir = promptsDir; // Store promptsDir for later use
+
+    log(`Initializing PromptWatcher for ${promptsDir}`);
+
+    // Determine scan interval
+    const envInterval = process.env.PROMPT_SCAN_INTERVAL_MS;
+    let parsedInterval = parseInt(envInterval || '', 10);
+    if (isNaN(parsedInterval) || parsedInterval <= 0) {
+      if (envInterval) {
+        log(`Invalid PROMPT_SCAN_INTERVAL_MS value "${envInterval}". Using default: ${DEFAULT_SCAN_INTERVAL_MS}ms`, 'warn');
+      }
+      parsedInterval = DEFAULT_SCAN_INTERVAL_MS;
+    }
+    this.scanIntervalMs = parsedInterval;
+
+    // Ensure the directory exists synchronously during construction
     try {
       if (!fs.existsSync(promptsDir)) {
         fs.mkdirSync(promptsDir, { recursive: true });
@@ -37,298 +58,214 @@ export class PromptWatcher {
       }
     } catch (error) {
       log(`Error checking/creating directory: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      // Allow continuing, scan will likely fail and log errors
     }
-    
-    // Use a simplified watcher configuration since we have the periodic scan as fallback
-    this.watcher = chokidar.watch(promptsDir, {
-      persistent: true,
-      ignoreInitial: true, // Don't trigger events for existing files - periodic scan will handle this
-      depth: 2, // Watch subdirectories
-      awaitWriteFinish: true, // Use default settings for stability
-      usePolling: true, // Use polling for more reliable detection
-      interval: 1000, // Standard polling interval
-      ignored: [
-        /(^|[\/\\])\../, // Ignore dotfiles
-        /(^|[\/\\])node_modules(\/|$)/ // Ignore node_modules
-      ]
-    });
-    
-    // Add error handler
-    this.watcher.on('error', (error) => {
-      log(`Watcher error: ${error}`, 'error');
-    });
-    
-    // Add ready event handler
-    this.watcher.on('ready', () => {
-      log('Watcher ready - now watching for changes', 'info');
-      
-      // Start the periodic scan as the primary mechanism for detecting files
-      this.startPeriodicScan(promptsDir);
-    });
-    
-    log(`Initialized prompt watcher for directory: ${promptsDir}`);
   }
 
   /**
-   * Starts watching the prompts directory for changes
+   * Starts the periodic scan of the prompts directory.
    */
   startWatching(): void {
-    log('Starting prompt watcher with event handlers');
-    
-    this.watcher
-      .on('add', (path) => {
-        if (this.isValidPromptFile(path)) {
-          log(`Add event detected for: ${path}`, 'info');
-          this.handlePromptCreated(path);
-        }
-      })
-      .on('change', (path) => {
-        if (this.isValidPromptFile(path)) {
-          log(`Change event detected for: ${path}`, 'info');
-          this.handlePromptModified(path);
-        }
-      })
-      .on('unlink', (path) => {
-        if (this.isValidPromptFile(path)) {
-          log(`Unlink event detected for: ${path}`, 'info');
-          this.handlePromptDeleted(path);
-        }
-      });
-    
-    log('Prompt watcher started - hot reloading enabled');
-  }
-  
-  /**
-   * Checks if a file is a valid prompt file
-   * @param filePath The path to check
-   * @returns True if the file is a valid prompt file, false otherwise
-   */
-  private isValidPromptFile(filePath: string): boolean {
-    return filePath.endsWith('.md');
-  }
-  
-  /**
-   * Starts a periodic scan of the prompts directory as the primary mechanism
-   * @param promptsDir The directory to scan
-   */
-  private startPeriodicScan(promptsDir: string): void {
-    const scanInterval = 5000; // 5 seconds
-    
-    log(`Starting periodic directory scan for ${promptsDir} every ${scanInterval}ms`);
-    
-    // Initial scan to load existing files
-    this.performDirectoryScan(promptsDir);
-    
-    // Set up periodic scan
+    log(`Starting periodic directory scan for ${this.promptsDir} every ${this.scanIntervalMs}ms`);
+
+    // Perform initial scan immediately to load existing files and populate state
+    this.performDirectoryScan().catch(error => {
+      log(`Error during initial directory scan: ${error instanceof Error ? error.message : String(error)}`, 'error');
+    });
+
+    // Set up the periodic scan interval
     this.periodicScanInterval = setInterval(() => {
-      this.performDirectoryScan(promptsDir);
-    }, scanInterval);
-  }
-  
-  /**
-   * Performs a scan of the prompts directory
-   * @param promptsDir The directory to scan
-   */
-  private async performDirectoryScan(promptsDir: string): Promise<void> {
-    try {
-      // Get all files in the directory
-      const files = fs.readdirSync(promptsDir);
-      const mdFiles = files.filter(file => file.endsWith('.md'));
-      
-      // Get all currently loaded prompts
-      const loadedPrompts = this.loader.getAllPrompts();
-      
-      // Only log when we find changes to reduce noise
-      let changesFound = false;
-      
-      // Check for new files not already loaded
-      for (const file of mdFiles) {
-        const promptName = path.basename(file, '.md');
-        const promptConfig = this.loader.getPrompt(promptName);
-        
-        if (!promptConfig) {
-          if (!changesFound) {
-            log(`Performing periodic directory scan of ${promptsDir}`);
-            log(`Found ${mdFiles.length} markdown files: ${JSON.stringify(mdFiles)}`);
-            changesFound = true;
-          }
-          
-          log(`Detected new file via periodic scan: ${file}`);
-          const filePath = path.join(promptsDir, file);
-          await this.handlePromptCreated(filePath);
-        }
-      }
-      
-      // Check for deleted files that are still loaded
-      for (const promptConfig of loadedPrompts) {
-        // If the prompt's file no longer exists, remove it
-        if (!fs.existsSync(promptConfig.path)) {
-          if (!changesFound) {
-            log(`Performing periodic directory scan of ${promptsDir}`);
-            changesFound = true;
-          }
-          
-          const promptName = path.basename(promptConfig.path, '.md');
-          const cleanName = promptConfig.parsed.metadata.name;
-          log(`Detected deleted file via periodic scan: ${promptName}.md (clean name: "${cleanName}")`);
-          await this.handlePromptDeleted(promptConfig.path);
-        }
-      }
-    } catch (error) {
-      log(`Error during periodic scan: ${error instanceof Error ? error.message : String(error)}`, 'error');
-    }
+      this.performDirectoryScan().catch(error => {
+        // Log errors from periodic scans but don't stop the interval
+        log(`Error during periodic directory scan: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      });
+    }, this.scanIntervalMs);
+
+    log('Prompt watcher started using periodic scan.');
   }
 
   /**
-   * Stops watching the prompts directory and cleans up resources
+   * Stops the periodic scan.
    */
   async stopWatching(): Promise<void> {
-    // Clear the periodic scan interval if it exists
     if (this.periodicScanInterval) {
       clearInterval(this.periodicScanInterval);
       this.periodicScanInterval = undefined;
       log('Periodic directory scan stopped');
     }
-    
-    // Close the watcher
-    await this.watcher.close();
-    log('Prompt watcher stopped');
   }
 
   /**
-   * Handles the creation of a new prompt file
-   * @param filePath The path of the created file
+   * Performs a scan of the prompts directory, comparing against known state.
+   */
+  private async performDirectoryScan(): Promise<void> {
+    log(`Performing directory scan of ${this.promptsDir}...`, 'info');
+    let currentFilesOnDisk: Set<string>;
+    let filesStats: Map<string, fs.Stats>;
+
+    try {
+      const files = await fsPromises.readdir(this.promptsDir);
+      const mdFiles = files.filter(file => this.isValidPromptFile(file));
+      currentFilesOnDisk = new Set(mdFiles.map(file => path.join(this.promptsDir, file)));
+      filesStats = new Map();
+
+      // Get stats for all current markdown files
+      for (const filePath of currentFilesOnDisk) {
+        try {
+          const stats = await fsPromises.stat(filePath);
+          filesStats.set(filePath, stats);
+        } catch (statError) {
+          log(`Error getting stats for file ${filePath}: ${statError instanceof Error ? statError.message : String(statError)}`, 'warn');
+          // Remove from set if we can't get stats, treat as non-existent for this scan
+          currentFilesOnDisk.delete(filePath);
+        }
+      }
+    } catch (error) {
+      log(`Error reading prompts directory ${this.promptsDir}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      // Cannot proceed with scan if directory read fails
+      return;
+    }
+
+    const knownFilePaths = new Set(this.knownFilesState.keys());
+    let changesDetected = false;
+
+    // Check for new or modified files
+    for (const filePath of currentFilesOnDisk) {
+      const stats = filesStats.get(filePath);
+      if (!stats) continue; // Should not happen due to check above, but safety first
+
+      const currentMtimeMs = stats.mtimeMs;
+      const knownState = this.knownFilesState.get(filePath);
+
+      if (!knownState) {
+        // New file detected
+        log(`Detected new file: ${filePath}`, 'info');
+        changesDetected = true;
+        try {
+          await this.handlePromptCreated(filePath);
+          // Add to known state only after successful processing
+          this.knownFilesState.set(filePath, { mtimeMs: currentMtimeMs });
+        } catch (error) {
+          log(`Failed to handle creation for ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+          // Do not add to known state if handling failed
+        }
+      } else if (currentMtimeMs > knownState.mtimeMs) {
+        // Modified file detected
+        log(`Detected modified file: ${filePath}`, 'info');
+        changesDetected = true;
+        try {
+          await this.handlePromptModified(filePath);
+          // Update known state only after successful processing
+          this.knownFilesState.set(filePath, { mtimeMs: currentMtimeMs });
+        } catch (error) {
+          log(`Failed to handle modification for ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+          // Do not update known state if handling failed
+        }
+      }
+      // If mtime is the same or older (e.g., system time issue), do nothing.
+    }
+
+    // Check for deleted files
+    for (const filePath of knownFilePaths) {
+      if (!currentFilesOnDisk.has(filePath)) {
+        // Deleted file detected
+        log(`Detected deleted file: ${filePath}`, 'info');
+        changesDetected = true;
+        try {
+          await this.handlePromptDeleted(filePath);
+          // Remove from known state only after successful processing
+          this.knownFilesState.delete(filePath);
+        } catch (error) {
+          log(`Failed to handle deletion for ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+          // Do not remove from known state if handling failed, will retry next scan
+        }
+      }
+    }
+
+    if (!changesDetected) {
+        log(`No changes detected in ${this.promptsDir}.`, 'info');
+    }
+  }
+
+  /**
+   * Checks if a file is a valid prompt file.
+   */
+  private isValidPromptFile(filePath: string): boolean {
+    // Basic check, can be expanded (e.g., ignore dotfiles)
+    return path.basename(filePath)[0] !== '.' && filePath.endsWith('.md');
+  }
+
+  // --- Handler Methods ---
+  // These methods remain largely the same but are now called exclusively by performDirectoryScan
+
+  /**
+   * Handles the creation of a new prompt file.
    */
   private async handlePromptCreated(filePath: string): Promise<void> {
+    // No need to double-check isValidPromptFile here, scan already filters
+    log(`Handling creation for: ${filePath}`);
+    const promptName = path.basename(filePath, '.md');
     try {
-      // We already check if it's a valid prompt file in the caller,
-      // but double-check here for safety when called directly
-      if (!this.isValidPromptFile(filePath)) {
-        return;
-      }
-      
-      log(`New prompt file detected: ${filePath}`);
-      
-      // Load the new prompt
       await this.loader.loadPrompt(filePath);
-      
-      // Get the prompt name from the path
-      const promptName = path.basename(filePath, '.md');
-      
-      // Get the loaded prompt config
       const promptConfig = this.loader.getPrompt(promptName);
-      
       if (promptConfig) {
-        // Get the clean name from frontmatter
-        const cleanName = promptConfig.parsed.metadata.name;
-        
-        // Register the new prompt with the server
         await this.registry.updatePrompt(promptName, promptConfig);
-        log(`New prompt registered: ${promptName} with clean name "${cleanName}"`);
+        log(`Registered new prompt: ${promptName} (Clean name: "${promptConfig.parsed.metadata.name}")`);
       } else {
-        log(`Failed to get prompt config for ${promptName}`, 'error');
+        // This case should ideally not happen if loadPrompt succeeded
+        log(`Prompt config not found after loading ${promptName}`, 'warn');
       }
     } catch (error) {
-      log(`Error loading new prompt: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      log(`Error processing created prompt ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      // Rethrow to signal failure to the scanner
+      throw error;
     }
   }
 
   /**
-   * Handles the modification of an existing prompt file
-   * @param filePath The path of the modified file
+   * Handles the modification of an existing prompt file.
    */
   private async handlePromptModified(filePath: string): Promise<void> {
+    log(`Handling modification for: ${filePath}`);
+    const promptName = path.basename(filePath, '.md');
     try {
-      if (!this.isValidPromptFile(filePath)) {
-        return;
-      }
-      
-      log(`Prompt file modified: ${filePath}`);
-      
-      // Get the prompt name from the path
-      const promptName = path.basename(filePath, '.md');
-      
-      // Get the original prompt config to check if the clean name has changed
-      const originalConfig = this.loader.getPrompt(promptName);
-      const originalCleanName = originalConfig?.parsed.metadata.name;
-      
-      // Reload the prompt in the loader
+      // Reload first to get the updated content
       await this.loader.reloadPrompt(filePath);
-      
-      // Get the updated prompt config
       const updatedConfig = this.loader.getPrompt(promptName);
-      
+
       if (updatedConfig) {
-        const newCleanName = updatedConfig.parsed.metadata.name;
-        
-        // Check if the clean name has changed
-        const isCleanNameChanging = originalCleanName && originalCleanName !== newCleanName;
-        
-        if (isCleanNameChanging) {
-          log(`Clean name changing from "${originalCleanName}" to "${newCleanName}"`);
-          
-          // IMPORTANT: For clean name changes, we need to ensure the old prompt is completely removed
-          // before registering the new one to prevent duplicates
-          
-          // Step 1: First, completely remove the prompt with the old clean name
-          this.registry.removePrompt(promptName);
-          log(`Completely removed prompt ${promptName} before re-registering with new clean name`);
-          
-          // Step 2: Verify no prompts exist with the new clean name to avoid duplicates
-          // This is handled in registry.updatePrompt, but we log it here for clarity
-          log(`Checking for existing prompts with clean name "${newCleanName}" before registration`);
-          
-          // Step 3: Register with the new clean name
-          // The updatePrompt method will handle deregistering any duplicates
-          await this.registry.updatePrompt(promptName, updatedConfig);
-          log(`Re-registered prompt ${promptName} with new clean name "${newCleanName}"`);
-        } else {
-          // If the clean name hasn't changed, just update normally
-          await this.registry.updatePrompt(promptName, updatedConfig);
-          log(`Updated prompt: ${promptName} with clean name "${newCleanName}"`);
-        }
+        // Let registry handle the update logic (including name changes)
+        await this.registry.updatePrompt(promptName, updatedConfig);
+        log(`Updated prompt: ${promptName} (Clean name: "${updatedConfig.parsed.metadata.name}")`);
       } else {
-        log(`Failed to get updated prompt config for ${promptName}`, 'error');
+        // This case should ideally not happen if reloadPrompt succeeded
+        log(`Prompt config not found after reloading ${promptName}`, 'warn');
+        // Attempt to remove the potentially stale prompt from the registry
+        this.registry.removePrompt(promptName);
       }
     } catch (error) {
-      log(`Error reloading modified prompt: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      log(`Error processing modified prompt ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      // Rethrow to signal failure to the scanner
+      throw error;
     }
   }
 
   /**
-   * Handles the deletion of a prompt file
-   * @param filePath The path of the deleted file
+   * Handles the deletion of a prompt file.
    */
   private async handlePromptDeleted(filePath: string): Promise<void> {
+    log(`Handling deletion for: ${filePath}`);
+    const promptName = path.basename(filePath, '.md');
     try {
-      if (!this.isValidPromptFile(filePath)) {
-        return;
-      }
-      
-      // Get the prompt name from the path
-      const promptName = path.basename(filePath, '.md');
-      log(`Prompt file deleted: ${filePath}`);
-      
-      // Get the prompt config before removing it from the loader
-      // This allows us to access the clean name from frontmatter
-      const promptConfig = this.loader.getPrompt(promptName);
-      let cleanName: string | undefined;
-      
-      if (promptConfig) {
-        cleanName = promptConfig.parsed.metadata.name;
-        log(`Found clean name "${cleanName}" for deleted prompt ${promptName}`);
-      }
-      
-      // Remove the prompt from the loader
-      this.loader.removePrompt(promptName);
-      
-      // Deregister the prompt from the server using the filename-derived name
-      // The removePrompt method will handle the mapping to the clean name
+      // Remove from registry first
       this.registry.removePrompt(promptName);
-      
-      log(`Prompt removed: ${promptName}`);
+      // Then remove from loader
+      this.loader.removePrompt(promptName);
+      log(`Removed prompt: ${promptName}`);
     } catch (error) {
-      log(`Error removing deleted prompt: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      log(`Error processing deleted prompt ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      // Rethrow to signal failure to the scanner
+      throw error;
     }
   }
 }

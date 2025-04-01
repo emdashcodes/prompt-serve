@@ -1,5 +1,5 @@
 ---
-name: Test Prompt!
+name: Test Prompt
 description: A test prompt for the MCP server.
 ---
 
