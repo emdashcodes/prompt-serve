@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 // Create and configure the server instance
 export const server = new McpServer({
-  name: "playground-server",
+  name: "prompt-serve",
   version: "1.0.0"
 });
 
