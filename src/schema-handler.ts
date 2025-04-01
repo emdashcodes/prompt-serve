@@ -4,19 +4,20 @@ import { Schema } from './types.js';
 /**
  * Generates a Zod schema for prompt arguments based on the provided schema definition.
  */
-export function getPromptArgsSchema(schema?: Schema): Record<string, z.ZodString> {
+export function getPromptArgsSchema(schema?: Schema): Record<string, z.ZodType> {
   if (!schema || !schema.properties) {
     return {};
   }
 
-  const result: Record<string, z.ZodString> = {};
+  const result: Record<string, z.ZodType> = {};
   
   for (const [key, value] of Object.entries(schema.properties)) {
-    let zodString = z.string().describe(value.description || `The ${key} parameter`);
+    const baseSchema = z.string().describe(value.description || `The ${key} parameter`);
     if (value.required) {
-      zodString = zodString.min(1, { message: `${key} is required` });
+      result[key] = baseSchema.min(1, { message: `${key} is required` });
+    } else {
+      result[key] = baseSchema.optional();
     }
-    result[key] = zodString;
   }
 
   return result;
