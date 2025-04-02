@@ -138,7 +138,7 @@ export class PromptWatcher {
     log(`Handling creation for: ${filePath}`);
     const promptName = path.basename(filePath, '.md');
     try {
-      await this.loader.loadPrompt(filePath);
+      await this.loader.loadPrompt(filePath, this.promptsDir);
       const promptConfig = this.loader.getPrompt(promptName);
       if (promptConfig) {
         await this.registry.registerPrompt(promptName, promptConfig);

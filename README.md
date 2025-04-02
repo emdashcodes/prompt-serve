@@ -1,23 +1,21 @@
 # Prompt Serve
 
-A Model Context Protocol (MCP) server implementation designed for managing, organizing, and serving AI prompts.
-
-## Description
-
-Prompt Serve allows you to create, manage, and serve structured prompts to AI models through MCP Prompts. It follows a "Prompts as Code" paradigm, where prompts are stored in text files and loaded into the application.
+A Model Context Protocol (MCP) server designed for managing, organizing, and serving AI prompts. MCP Prompts, follow a "Prompts as Code" paradigm, where prompts are stored in text files with frontmatter metadata.
 
 Key benefits include:
 
-- **Prompt as Code**: Use Markdown with frontmatter for human-readable, version-control friendly prompt definitions.
 - **Centralized Prompt Management**: Store and organize your prompts in one location.
-- **Dynamic Parameters**: Use dynamic parameters in your prompts.
-- **Automatic Detection of New Prompts**: Automatically detects when new prompt files are added via periodic scanning. **Note:** Modifications to or deletions of existing prompt files currently require a server restart to take effect.
+- **Prompt as Code**: Use Markdown with frontmatter for human-readable, version-control friendly prompt definitions.
+  - **Dynamic Parameters**: Use dynamic parameters in your prompts.
+  - **Template Parts**: Use template parts to build complex prompts from reusable components.
+- **Automatic Detection of New Prompts**: Automatically detects when new prompt files are added via periodic scanning.
 
 ## Dependencies
 
 - TypeScript
 - MCP SDK (@modelcontextprotocol/sdk)
 - Zod (for schema validation)
+- gray-matter (for frontmatter parsing)
 
 ## Setup
 
@@ -150,6 +148,36 @@ Example schema:
   }
 }
 ```
+
+### Importing Content (`@import`) with Template Parts
+
+You can include content from other Markdown files within your prompt directory using the `@import` directive. This allows you to reuse common sections or structure complex prompts.
+
+Files whose names start with an underscore (e.g., `_shared_header.md`) are treated as partials. They won't be loaded as standalone prompts by the server but *can* be included using the `@import` syntax.
+
+This allows you to build complex prompts from reusable components like building blocks.
+
+- **Syntax**: Use `@path/to/file.md` or `@file.md`.
+- **Base Path**: Paths are always resolved relative to the main `PROMPTS_DIR` specified in your environment configuration.
+- **Supported Files**: Currently, only `.md` files can be imported.
+- **Escaping**: If you need a literal `@` symbol at the beginning of a line that might otherwise look like an import, escape it with a backslash: `\\@`. For example, `\\@username` will appear as `@username` in the final prompt content.
+- **Recursion & Cycles**: Imports are resolved recursively. The system detects and prevents circular dependencies (e.g., `a.md` importing `b.md` which imports `a.md`).
+- **Duplicates**: The same file will only be included once per top-level prompt, even if imported multiple times through different paths.
+
+## Example Prompts
+
+The project includes several example prompts in the `example-prompts/` directory:
+
+- `github-pr.md`: A comprehensive prompt for generating PR titles, descriptions, and code reviews
+- `todo-md-convert.md`: A prompt for converting todo lists to markdown format
+- `test.md`: A simple test prompt
+
+These examples demonstrate various features of the prompt system, including:
+
+- Frontmatter usage
+- Schema definitions
+- Dynamic parameter substitution
+- Complex prompt structures
 
 ## Troubleshooting
 
