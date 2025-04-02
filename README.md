@@ -1,4 +1,4 @@
-# Prompt Serve
+# PromptServe -  File based prompt management for MCP
 
 A Model Context Protocol (MCP) server designed for managing, organizing, and serving AI prompts. PromptServe follows a "Prompts as Code" paradigm where prompts are stored in text files with frontmatter metadata.
 
