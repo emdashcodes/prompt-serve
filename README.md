@@ -44,8 +44,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "node",
       "args": ["/path/to/prompt-serve/dist/index.js"],
       "env": {
-        "PROMPTS_DIR": "/path/to/your/prompts",
-        "PROMPT_SCAN_INTERVAL_MS": "10000" // Example: 10 seconds
+        "PROMPTS_DIR": "/path/to/your/prompts"
       }
     }
   }
@@ -148,6 +147,24 @@ Example schema:
   }
 }
 ```
+
+### Default Values for Parameters
+
+You can provide default values for optional parameters directly within the prompt template using the `||` operator. This is useful when you want a fallback value if an optional argument isn't provided by the user.
+
+- **Syntax**: `${parameterName || 'Your Default Value'}` or `${parameterName || "Your Default Value"}`
+- **Requirement**: The parameter (`parameterName` in the example) must be defined as optional (i.e., *not* have `required: true`) in the prompt's schema.
+- **Quotes**: The default value **must** be enclosed in either single (`'`) or double (`"`) quotes.
+
+**Example:**
+
+If you have an optional `language` parameter, you could use:
+
+```markdown
+Explain this code snippet, assuming it's ${language || 'code'}:
+```
+
+If the user provides a `language` argument, it will be used. If not, the text "code" will be substituted.
 
 ### Importing Content (`@import`) with Template Parts
 

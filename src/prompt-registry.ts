@@ -78,7 +78,7 @@ export class PromptRegistry {
             role: "user",
             content: {
               type: "text",
-              text: content.replace(/\${(\w+)}/g, (_, key) => args[key] || '')
+              text: content.replace(/\${(\w+)(?:\s*\|\|\s*(?:'([^']*)'|"([^"]*)"))?}/g, (_, key, defaultSingle, defaultDouble) => args[key] || defaultSingle || defaultDouble || '')
             }
           }]
         })
