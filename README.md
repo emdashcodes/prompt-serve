@@ -1,13 +1,13 @@
 # Prompt Serve
 
-A Model Context Protocol (MCP) server designed for managing, organizing, and serving AI prompts. MCP Prompts, follow a "Prompts as Code" paradigm, where prompts are stored in text files with frontmatter metadata.
+A Model Context Protocol (MCP) server designed for managing, organizing, and serving AI prompts. PromptServe follows a "Prompts as Code" paradigm where prompts are stored in text files with frontmatter metadata.
 
-Key benefits include:
+## Features
 
-- **Centralized Prompt Management**: Store and organize your prompts in one location.
-- **Prompt as Code**: Use Markdown with frontmatter for human-readable, version-control friendly prompt definitions.
-  - **Dynamic Parameters**: Use dynamic parameters in your prompts.
-  - **Template Parts**: Use template parts to build complex prompts from reusable components.
+- **Centralized Prompt Management**: Store and organize your prompts and reusable workflows in one location.
+- **Prompt as Code**: Use Markdown with frontmatter for human-readable and AI friendly, version-control compatible prompt definitions.
+  - **Dynamic Parameters**: Use dynamic parameters in your prompts and fill them in at runtime.
+  - **Template Parts**: Use template parts to build more complex prompts from reusable components.
 - **Automatic Detection of New Prompts**: Automatically detects when new prompt files are added via periodic scanning.
 
 ## Dependencies
@@ -169,8 +169,6 @@ This allows you to build complex prompts from reusable components like building 
 The project includes several example prompts in the `example-prompts/` directory:
 
 - `github-pr.md`: A comprehensive prompt for generating PR titles, descriptions, and code reviews
-- `todo-md-convert.md`: A prompt for converting todo lists to markdown format
-- `test.md`: A simple test prompt
 
 These examples demonstrate various features of the prompt system, including:
 
