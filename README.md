@@ -35,7 +35,7 @@ A Model Context Protocol (MCP) server designed for managing, organizing, and ser
 
 #### Claude Desktop
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+1. Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -51,19 +51,33 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-*(Replace `/path/to/prompt-serve` and `/path/to/your/prompts` with your actual paths)*
+2. Replace `/path/to/prompt-serve/dist/index.js` and `/path/to/your/prompts` with the correct **absolute paths** on your system.
+3. After saving changes to `claude_desktop_config.json`, you will need to restart Claude Desktop for the new configuration to be loaded.
 
-#### Cursor
+#### Cursor / RooCode / GitHub Copilot (via PromptLink Extension)
 
-*(Configuration details needed)*
+To use PromptServe prompts with Cursor, RooCode, or GitHub Copilot, you need the [PromptLink VS Code Extension](https://github.com/emdashcodes/prompt-link). This extension acts as a bridge between MCP servers (like PromptServe) and these tools.
 
-#### RooCode
+1. Install the [PromptLink Extension](https://marketplace.visualstudio.com/items?itemName=emdashcodes.prompt-link) from the VS Code Marketplace.
+2. Configure PromptLink in your VS Code `settings.json` to connect to your running PromptServe instance. Add an entry to the `promptLink.servers` array:
 
-*(Configuration details needed)*
+    ```json
+    "promptLink.servers": [
+      {
+        "name": "PromptServe",
+        "command": "node",
+        "args": [
+          "/path/to/prompt-serve/dist/index.js"
+        ],
+        "env": {
+          "PROMPTS_DIR": "/path/to/your/prompts"
+        }
+      }
+    ],
+    ```
 
-#### GitHub Copilot
-
-*(Configuration details needed)*
+3. Replace `/path/to/prompt-serve/dist/index.js` and `/path/to/your/prompts` with the correct absolute paths on your system.
+4. Once configured, you can use the PromptLink command (default: `Cmd+Shift+A` / `Ctrl+Shift+A`) to select a prompt from PromptServe and send it to Cursor, RooCode, or Copilot.
 
 ## Configuration
 
@@ -174,25 +188,22 @@ Files whose names start with an underscore (e.g., `_shared_header.md`) are treat
 
 This allows you to build complex prompts from reusable components like building blocks.
 
-- **Syntax**: Use `@path/to/file.md` or `@file.md`.
-- **Base Path**: Paths are always resolved relative to the main `PROMPTS_DIR` specified in your environment configuration.
-- **Supported Files**: Currently, only `.md` files can be imported.
-- **Escaping**: If you need a literal `@` symbol at the beginning of a line that might otherwise look like an import, escape it with a backslash: `\\@`. For example, `\\@username` will appear as `@username` in the final prompt content.
-- **Recursion & Cycles**: Imports are resolved recursively. The system detects and prevents circular dependencies (e.g., `a.md` importing `b.md` which imports `a.md`).
-- **Duplicates**: The same file will only be included once per top-level prompt, even if imported multiple times through different paths.
-
 ## Example Prompts
 
 The project includes several example prompts in the `example-prompts/` directory:
 
-- `github-pr.md`: A comprehensive prompt for generating PR titles, descriptions, and code reviews
+- `github-pr.md`: Demonstrates a complex prompt with both required (`changes`) and optional (`issueNumber`, `context`) arguments defined in the schema.
+- `explain-code.md`: Shows a mix of required (`code`) and optional (`language`) arguments. It also utilizes the default value syntax (`${language || 'code'}`) for an optional parameter with a fallback value.
+- `random-idea-generator.md`: An example of a prompt that requires no arguments (empty schema `properties`).
+- `meeting-summary.md`: Uses a required argument (`notes`) and demonstrates the template part import feature by including `@_common-formatting.md`.
+- `_common-formatting.md`: A partial file (name starts with `_`) intended to be included in other prompts. It is not loaded as a standalone prompt itself.
 
-These examples demonstrate various features of the prompt system, including:
+These examples showcase various features like:
 
-- Frontmatter usage
-- Schema definitions
-- Dynamic parameter substitution
-- Complex prompt structures
+- Defining required and optional arguments using the schema.
+- Using default values for optional arguments (`${arg || 'default'}`).
+- Creating prompts with no arguments.
+- Reusing content via template parts (`@_partial.md`).
 
 ## Troubleshooting
 
